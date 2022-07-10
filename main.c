@@ -22,7 +22,9 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <string.h>
-
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #define MAX_LOOP 50
 #define SIZE 5*1024*1024
@@ -104,7 +106,7 @@ handle_input(void* args)
 
 
 			send(
-				input->connection_list->file_descriptors[header->argument],
+				input->connection_list->file_descriptors[read_header->argument],
 				read_data,read_header->size,
 				MSG_DONTWAIT
 			);
@@ -143,7 +145,7 @@ handle_output(void* ptr)
 				input->packet_list->packets[write_header->argument].bytes,
 				input->packet_list->packets[write_header->argument].size
 			);
-			write_header->size = input->packet_list[write_header]->size;
+			write_header->size = input->packet_list->packets[write_header->argument].size;
 			write_header->bitmask = WRITE_HEADER_SET;
 		}
 	}
@@ -160,7 +162,7 @@ get_shared_mem(const char* filename,size_t size)
 {
 	int fd = shm_open(filename,O_RDWR|O_CREAT,S_IRWXU|S_IRWXG|S_IRWXO);
 	ftruncate(fd,size);
-	void* output = mmap(NULL,size,PROT_READ|PROT_WRITE,MAP_SHREAD,fd,0);
+	void* output = mmap(NULL,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
 	close(fd);
 	return output;
 }
@@ -202,7 +204,7 @@ main(void)
 	 *	Setup threads and their respective required data structures
 	 */
 	InterfaceArguments* input_subroutine_arguments = malloc(sizeof(InterfaceArguments));
-	InterfaceArguments* output_subroutine_arugments = mallloc(sizeof(InterfaceArguments));
+	InterfaceArguments* output_subroutine_arguments = malloc(sizeof(InterfaceArguments));
 	
 	input_subroutine_arguments->buffer = read_from;
 	input_subroutine_arguments->connection_list = curr_connections;
@@ -228,11 +230,11 @@ main(void)
 	
 	struct sockaddr_in address;
 	address.sin_family = AF_INET;
-	address.sin_addr = INADDR_ANY;
+	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htonl(2096);
 	socklen_t address_length = sizeof(address);
 
-	bind(server_socket,(struct sockaddr*)&address,&address_length);
+	bind(server_socket,(struct sockaddr*)&address,address_length);
 	listen(server_socket,128);
 	
 	/*
@@ -262,9 +264,9 @@ main(void)
 			{
 				if (i == 0)
 				{
-					int new_confd = accept(server_socket,&address,&address_length);
+					int new_confd = accept(server_socket,(struct sockaddr*)&address,&address_length);
 					new_connections_size++;
-					new_connections = realloc(new_connections,sizeof(pollfd)*new_connections_size);
+					new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
 					new_connections[new_connections_size-1].fd = new_confd;
 					new_connections[new_connections_size-1].events = POLLIN;
 					continue;
