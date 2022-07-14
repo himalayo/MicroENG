@@ -27,6 +27,9 @@
 #include <netinet/tcp.h>
 
 #define MAX_LOOP 50
+
+#define MAX_PACKET_HIST 100
+//Packet buffer, and shared memory size
 #define SIZE 5*1024*1024
 
 #define HEADER_ERR	  1<<7
@@ -167,6 +170,26 @@ get_shared_mem(const char* filename,size_t size)
 	return output;
 }
 
+void*
+secondary_event_poll(void* args)
+{
+	ConnectionPoll* poll = (ConnectionPoll*)args;
+	for(;;)
+	{
+		int ready = poll(poll->poll_buffer,poll->size,-1);
+
+		for (int i=0; i<poll->size; i++)
+		{
+			if (poll->poll_buffer[i] == 0)
+				continue;
+			
+				
+		}
+			
+	}
+	return NULL;
+}
+
 /*
  *	Manages program's state
  */
@@ -287,6 +310,12 @@ main(void)
 				packet_log->packets[packet_log->size-1].connection_fd = main_poll->poll_buffer[i].fd;
 				packet_log->packets[packet_log->size-1].bytes = packet_buf;
 				packet_log->packets[packet_log->size-1].size = bytes_read;
+
+				if (packet_log->size > MAX_PACKET_HIST )
+				{
+					memmove(packet_log->packets, packet_log->packets+size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
+					realloc(packet_log->packets,MAX_PACKET_HIST/3);
+				}
 			}
 
 		}
@@ -296,9 +325,26 @@ main(void)
 
 		if (main_poll->size > MAX_LOOP)
 		{
+			bool found_poll = false;
 			for (int i=0; i<connection_polls.size; i++)
 			{
-				//TODO	
+				if (connetion_polls->polls[i]->size < MAX_LOOP)
+				{
+					realloc(connection_polls->polls[i]->poll_buffer,sizeof(struct pollfd)*(connection_polls[i]->polls[i]->size+new_connections_size));
+					memcpy(connection_polls->polls[i]->poll_buffer+connection_polls->polls[i]->size,new_connections,new_connections_size*sizeof(struct pollfd));
+					connection_polls->polls[i]->size += new_connections_size;
+					
+					found_poll = true;
+					
+					break;
+				}
+			}
+
+			if (!found_poll)
+			{
+				connection_polls->thread_list_size++;
+				connection_polls->thread_list = realloc(connection_polls->thread_list,sizeof(pthread_t)*conenction_polls->thread_list_size);
+				connection_polls->thread_list[connection_polls->thread_list_size-1] = pthread_create();
 			}
 			continue;	
 		}
