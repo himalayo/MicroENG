@@ -285,7 +285,7 @@ main(void)
 			
 			if (main_poll->poll_buffer[i].revents != 0)
 			{
-				if (i == 0)
+				if (i == 0) //Accept incoming connections
 				{
 					int new_confd = accept(server_socket,(struct sockaddr*)&address,&address_length);
 					new_connections_size++;
@@ -295,6 +295,7 @@ main(void)
 					continue;
 				}
 				
+				//Receive packets	
 				char* packet_buf = malloc(SIZE);
 				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,MSG_DONTWAIT);
 
@@ -304,13 +305,15 @@ main(void)
 					continue;
 				}
 				packet_buf = realloc(packet_buf,bytes_read);	
-
+				
+				//Append new pakcets into the packet history
 				packet_log->size++;
 				packet_log->packets = realloc(packet_log->packets,packet_log->size*sizeof(Packet));
 				packet_log->packets[packet_log->size-1].connection_fd = main_poll->poll_buffer[i].fd;
 				packet_log->packets[packet_log->size-1].bytes = packet_buf;
 				packet_log->packets[packet_log->size-1].size = bytes_read;
-
+				
+				//Delete older packets whenever packet history gets too long
 				if (packet_log->size > MAX_PACKET_HIST )
 				{
 					memmove(packet_log->packets, packet_log->packets+size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
@@ -320,9 +323,11 @@ main(void)
 
 		}
 		
+		//Check whether we have new connections to append to the event loop
 		if (new_connections_size == 0) 
 			continue;
-
+		
+		//Append incoming connections into other polls in case ours is full	
 		if (main_poll->size > MAX_LOOP)
 		{
 			bool found_poll = false;
@@ -339,7 +344,8 @@ main(void)
 					break;
 				}
 			}
-
+			
+			//Create new poll in seperate thread i case every other poll is already filled
 			if (!found_poll)
 			{
 				connection_polls->thread_list_size++;
@@ -349,7 +355,7 @@ main(void)
 			continue;	
 		}
 
-
+		//Append the new connection to our poll in case it's not full
 		main_poll->poll_buffer = realloc(main_poll->poll_buffer, (main_poll->size+new_connections_size)*sizeof(struct pollfd));
 		for (int i=0; i<new_connections_size; i++)
 		{
