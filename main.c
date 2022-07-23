@@ -16,6 +16,7 @@
 #include <poll.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/types.h>
@@ -173,14 +174,14 @@ get_shared_mem(const char* filename,size_t size)
 void*
 secondary_event_poll(void* args)
 {
-	ConnectionPoll* poll = (ConnectionPoll*)args;
+	ConnectionPoll* conn_poll = (ConnectionPoll*)args;
 	for(;;)
 	{
-		int ready = poll(poll->poll_buffer,poll->size,-1);
+		int ready = poll(conn_poll->poll_buffer,conn_poll->size,-1);
 
-		for (int i=0; i<poll->size; i++)
+		for (int i=0; i<conn_poll->size; i++)
 		{
-			if (poll->poll_buffer[i] == 0)
+			if (conn_poll->poll_buffer[i].revents == 0)
 				continue;
 			
 				
@@ -316,8 +317,8 @@ main(void)
 				//Delete older packets whenever packet history gets too long
 				if (packet_log->size > MAX_PACKET_HIST )
 				{
-					memmove(packet_log->packets, packet_log->packets+size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
-					realloc(packet_log->packets,MAX_PACKET_HIST/3);
+					memmove(packet_log->packets, packet_log->packets+packet_log->size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
+					packet_log->packets = realloc(packet_log->packets,MAX_PACKET_HIST/3);
 				}
 			}
 
@@ -333,11 +334,11 @@ main(void)
 			bool found_poll = false;
 			for (int i=0; i<connection_polls.size; i++)
 			{
-				if (connetion_polls->polls[i]->size < MAX_LOOP)
+				if (connection_polls.polls[i].size < MAX_LOOP)
 				{
-					realloc(connection_polls->polls[i]->poll_buffer,sizeof(struct pollfd)*(connection_polls[i]->polls[i]->size+new_connections_size));
-					memcpy(connection_polls->polls[i]->poll_buffer+connection_polls->polls[i]->size,new_connections,new_connections_size*sizeof(struct pollfd));
-					connection_polls->polls[i]->size += new_connections_size;
+					connection_polls.polls[i].poll_buffer = realloc(connection_polls.polls[i].poll_buffer,sizeof(struct pollfd)*(connection_polls.polls[i].size+new_connections_size));
+					memcpy(connection_polls.polls[i].poll_buffer+connection_polls.polls[i].size,new_connections,new_connections_size*sizeof(struct pollfd));
+					connection_polls.polls[i].size += new_connections_size;
 					
 					found_poll = true;
 					
@@ -348,9 +349,9 @@ main(void)
 			//Create new poll in seperate thread i case every other poll is already filled
 			if (!found_poll)
 			{
-				connection_polls->thread_list_size++;
-				connection_polls->thread_list = realloc(connection_polls->thread_list,sizeof(pthread_t)*conenction_polls->thread_list_size);
-				connection_polls->thread_list[connection_polls->thread_list_size-1] = pthread_create();
+				connection_polls.thread_list_size++;
+				connection_polls.thread_list = realloc(connection_polls.thread_list,sizeof(pthread_t)*connection_polls.thread_list_size);
+				pthread_create(&connection_polls.thread_list[connection_polls.thread_list_size-1],NULL,secondary_event_poll,(void*)&connection_polls.polls[connection_polls.size-1]);
 			}
 			continue;	
 		}
