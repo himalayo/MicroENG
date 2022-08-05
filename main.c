@@ -285,8 +285,6 @@ main(void)
 			int client_addr_len = sizeof(client_addr);
 			int new_confd = accept(server_socket,(struct sockaddr*)&client_addr,&client_addr_len);
 			
-			char troll_face[32];
-			write(STDOUT_FILENO,troll_face,sprintf(troll_face,"When you troll the face\n"));
 			/*
 			new_connections_size++;
 			new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
@@ -305,8 +303,6 @@ main(void)
 
 			if (main_poll->poll_buffer[i].revents & POLLIN)
 			{
-				char troll_message[100];
-				write(STDOUT_FILENO,troll_message,sprintf(troll_message,"Troll moment for XD and LMAO\n"));
 				//Receive packets	
 				char packet_buf[SIZE]; 
 				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,0);
@@ -315,7 +311,6 @@ main(void)
 				{
 					continue;
 				}
-				write(STDOUT_FILENO,packet_buf,bytes_read);
 				//Append new pakcets into the packet history
 				packet_log->size++;
 				packet_log->packets = realloc(packet_log->packets,packet_log->size*sizeof(Packet));
@@ -329,6 +324,7 @@ main(void)
 					memmove(packet_log->packets, packet_log->packets+packet_log->size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
 					packet_log->packets = realloc(packet_log->packets,MAX_PACKET_HIST/3);
 				}
+
 			}
 
 		}
