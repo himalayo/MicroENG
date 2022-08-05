@@ -29,7 +29,7 @@
 
 #define MAX_LOOP 50
 
-#define MAX_PACKET_HIST 100
+#define MAX_PACKET_HIST 10 
 //Packet buffer, and shared memory size
 #define SIZE 5*1024*1024
 
@@ -269,9 +269,10 @@ main(void)
 
 	for (;;)
 	{
+		/*
 		struct pollfd* new_connections = malloc(sizeof(struct pollfd));
 		int	       new_connections_size = 0;
-
+		*/
 
 		int ready = poll(main_poll->poll_buffer,main_poll->size,-1);
 
@@ -292,7 +293,7 @@ main(void)
 			new_connections[new_connections_size-1].events = POLLIN;
 			*/
 			main_poll->size++;
-			main_poll->poll_buffer = realloc(main_poll->poll_buffer,main_poll->size);
+			main_poll->poll_buffer = realloc(main_poll->poll_buffer,main_poll->size*sizeof(struct pollfd));
 			main_poll->poll_buffer[main_poll->size-1].fd = new_confd;
 			main_poll->poll_buffer[main_poll->size-1].events = POLLIN;
 		}
@@ -304,11 +305,13 @@ main(void)
 			if (main_poll->poll_buffer[i].revents & POLLIN)
 			{
 				//Receive packets	
-				char packet_buf[SIZE]; 
+				char *packet_buf = malloc(SIZE); 
 				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,0);
 
-				if (bytes_read == -1)
+				if (bytes_read == -1 || bytes_read == 0)
 				{
+					main_poll->size--;
+					memmove(&main_poll->poll_buffer[i],&main_poll->poll_buffer[i+1],main_poll->size-i);
 					continue;
 				}
 				//Append new pakcets into the packet history
@@ -323,16 +326,18 @@ main(void)
 				{
 					memmove(packet_log->packets, packet_log->packets+packet_log->size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
 					packet_log->packets = realloc(packet_log->packets,MAX_PACKET_HIST/3);
+					packet_log->size = MAX_PACKET_HIST/3;
 				}
-
+				write(STDOUT_FILENO, packet_log->packets[packet_log->size-1].bytes, packet_log->packets[packet_log->size-1].size);
 			}
 
 		}
 		
 		//Check whether we have new connections to append to the event loop
+		/*
 		if (new_connections_size == 0) 
 			continue;
-		
+		*/
 		//Append incoming connections into other polls in case ours is full	
 		/*
 		if (main_poll->size > MAX_LOOP)
