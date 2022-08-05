@@ -214,9 +214,6 @@ main(void)
 	curr_connections->file_descriptors = malloc(sizeof(int));
 	packet_log->packets = malloc(sizeof(Packet));
 
-	ConnectionPoll* main_poll = malloc(sizeof(ConnectionPoll));
-	main_poll->poll_buffer = malloc(sizeof(struct pollfd));
-
 	struct poll_list {
 		pthread_t*      thread_list;
 		size_t          thread_list_size;
@@ -254,23 +251,25 @@ main(void)
 	
 	struct sockaddr_in address;
 	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htonl(2096);
-	socklen_t address_length = sizeof(address);
+	address.sin_addr.s_addr = htonl(INADDR_ANY);
+	address.sin_port = htons(2096);
 
-	bind(server_socket,(struct sockaddr*)&address,address_length);
+	bind(server_socket,(struct sockaddr*)&address,sizeof(address));
 	listen(server_socket,128);
 	
 	/*
 	 *	Run event pool
 	 */
+	ConnectionPoll* main_poll = malloc(sizeof(ConnectionPoll));
+	main_poll->poll_buffer = malloc(sizeof(struct pollfd));
+
 	main_poll->poll_buffer[0].fd = server_socket;
 	main_poll->poll_buffer[0].events = POLLIN;
-	
+	main_poll->size = 1;
 
 	for (;;)
 	{
-		struct pollfd* new_connections;
+		struct pollfd* new_connections = malloc(sizeof(struct pollfd));
 		int	       new_connections_size = 0;
 
 
@@ -280,33 +279,43 @@ main(void)
 		{
 			exit(EXIT_FAILURE);
 		}
-
-		for (int i=0; i<main_poll->size; i++)
+		if (main_poll->poll_buffer[0].revents & POLLIN) //Accept incoming connections
 		{
+			struct sockaddr_in client_addr;
+			int client_addr_len = sizeof(client_addr);
+			int new_confd = accept(server_socket,(struct sockaddr*)&client_addr,&client_addr_len);
 			
-			if (main_poll->poll_buffer[i].revents != 0)
+			char troll_face[32];
+			write(STDOUT_FILENO,troll_face,sprintf(troll_face,"When you troll the face\n"));
+			/*
+			new_connections_size++;
+			new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
+			new_connections[new_connections_size-1].fd = new_confd;
+			new_connections[new_connections_size-1].events = POLLIN;
+			*/
+			main_poll->size++;
+			main_poll->poll_buffer = realloc(main_poll->poll_buffer,main_poll->size);
+			main_poll->poll_buffer[main_poll->size-1].fd = new_confd;
+			main_poll->poll_buffer[main_poll->size-1].events = POLLIN;
+		}
+		
+
+		for (int i=1; i<main_poll->size; i++)
+		{
+
+			if (main_poll->poll_buffer[i].revents & POLLIN)
 			{
-				if (i == 0) //Accept incoming connections
-				{
-					int new_confd = accept(server_socket,(struct sockaddr*)&address,&address_length);
-					new_connections_size++;
-					new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
-					new_connections[new_connections_size-1].fd = new_confd;
-					new_connections[new_connections_size-1].events = POLLIN;
-					continue;
-				}
-				
+				char troll_message[100];
+				write(STDOUT_FILENO,troll_message,sprintf(troll_message,"Troll moment for XD and LMAO\n"));
 				//Receive packets	
-				char* packet_buf = malloc(SIZE);
-				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,MSG_DONTWAIT);
+				char packet_buf[SIZE]; 
+				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,0);
 
 				if (bytes_read == -1)
 				{
-					free(packet_buf);
 					continue;
 				}
-				packet_buf = realloc(packet_buf,bytes_read);	
-				
+				write(STDOUT_FILENO,packet_buf,bytes_read);
 				//Append new pakcets into the packet history
 				packet_log->size++;
 				packet_log->packets = realloc(packet_log->packets,packet_log->size*sizeof(Packet));
@@ -329,6 +338,7 @@ main(void)
 			continue;
 		
 		//Append incoming connections into other polls in case ours is full	
+		/*
 		if (main_poll->size > MAX_LOOP)
 		{
 			bool found_poll = false;
@@ -355,14 +365,16 @@ main(void)
 			}
 			continue;	
 		}
-
+		*/
 		//Append the new connection to our poll in case it's not full
+		/*
 		main_poll->poll_buffer = realloc(main_poll->poll_buffer, (main_poll->size+new_connections_size)*sizeof(struct pollfd));
 		for (int i=0; i<new_connections_size; i++)
 		{
 			fcntl(new_connections[i].fd, F_SETFL, fcntl(new_connections[i].fd, F_GETFL, 0) | O_NONBLOCK);
 		}
-		memcpy(&main_poll[main_poll->size-1],new_connections,new_connections_size*sizeof(struct pollfd));
+		memcpy(&main_poll->poll_buffer[main_poll->size],new_connections,new_connections_size*sizeof(struct pollfd));
 		main_poll->size += new_connections_size;
+		*/
 	}
 }
