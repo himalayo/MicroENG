@@ -35,7 +35,7 @@
 #include <netinet/tcp.h>
 
 #define EVENT_BUFFER_LEN 32
-#define MAX_LOOP 50
+#define MAX_LOOP 32 
 
 #define MAX_PACKET_HIST 10 
 //Packet buffer, and shared memory size
@@ -95,8 +95,18 @@ typedef struct connection_epoll
 {
 	struct epoll_event event_buffer[EVENT_BUFFER_LEN];
 	int fd;
+	int connections;
 } ConnectionEPoll;
+
+typedef struct eventloop_args
+{
+	ConnectionEPoll* epoll;
+	PacketHistory* packet_log;
+} LoopArguments;
+
 #endif
+
+
 
 /*
  *	Reads from the input buffer, and responds to commands accordingly. The following commands are supported:
@@ -189,28 +199,6 @@ get_shared_mem(const char* filename,size_t size)
 	return output;
 }
 
-#ifdef USE_POLL
-void*
-secondary_event_poll(void* args)
-{
-	ConnectionPoll* conn_poll = (ConnectionPoll*)args;
-	for(;;)
-	{
-		int ready = poll(conn_poll->poll_buffer,conn_poll->size,-1);
-
-		for (int i=0; i<conn_poll->size; i++)
-		{
-			if (conn_poll->poll_buffer[i].revents == 0)
-				continue;
-			
-				
-		}
-			
-	}
-	return NULL;
-}
-#endif
-
 /*
  *	Boilerplate
  */
@@ -259,6 +247,73 @@ append_packet(PacketHistory* hist, Packet* packet)
 	hist->packets = realloc(hist->packets, hist->size*sizeof(Packet));
 	hist->packets[hist->size-1] = packet;
 }
+
+#ifdef USE_POLL
+void*
+secondary_event_poll(void* args)
+{
+	ConnectionPoll* conn_poll = (ConnectionPoll*)args;
+	for(;;)
+	{
+		int ready = poll(conn_poll->poll_buffer,conn_poll->size,-1);
+
+		for (int i=0; i<conn_poll->size; i++)
+		{
+			if (conn_poll->poll_buffer[i].revents == 0)
+				continue;
+			
+				
+		}
+			
+	}
+	return NULL;
+}
+#endif
+
+#ifndef USE_POLL
+void*
+secondary_event_poll(void* in_args)
+{
+	LoopArguments* args = (LoopArguments*)in_args;
+	ConnectionEPoll* conn_epoll = args->epoll;
+	PacketHistory* packet_log = args->packet_log;
+	
+	for(;;)
+	{
+		int num_events = epoll_wait(conn_epoll->fd, conn_epoll->event_buffer, EVENT_BUFFER_LEN ,-1);
+		
+		for (int i=0; i<num_events; i++)
+		{
+			if ( conn_epoll->event_buffer[i].events & EPOLLIN )
+			{
+				char *packet_buff = malloc(SIZE);
+				ssize_t bytes_read = recv(conn_epoll->event_buffer[i].data.fd, packet_buff, SIZE, 0);
+
+				if (bytes_read == -1)
+				{
+					free(packet_buff);
+					continue;
+				}
+				packet_buff = realloc(packet_buff, bytes_read);
+				write(STDOUT_FILENO,packet_buff,bytes_read);
+				append_packet(packet_log, into_packet(conn_epoll->event_buffer[i].data.fd, packet_buff,bytes_read));
+				continue;
+			}
+
+			if ( conn_epoll->event_buffer[i].events & (EPOLLRDHUP | EPOLLHUP) )
+			{
+				conn_epoll->connections--;
+				epoll_ctl(conn_epoll->fd, EPOLL_CTL_DEL, conn_epoll->event_buffer[i].data.fd, NULL);
+				close(conn_epoll->event_buffer[i].data.fd);	
+			}	
+		}
+	}
+	
+	return NULL;
+}
+#endif
+
+
 
 /*
  *	Manages program's state
@@ -390,16 +445,30 @@ main(void)
 	#endif
 
 	#ifndef USE_POLL
+
+	struct epoll_list {
+		pthread_t*      thread_list;
+		size_t          thread_list_size;
+		ConnectionEPoll* epolls;
+		size_t          size;
+	} subroutines;
+	subroutines.epolls = malloc(sizeof(ConnectionEPoll));
+	subroutines.thread_list = malloc(sizeof(pthread_t));
+	subroutines.size = 0;
+	subroutines.thread_list_size = 0;
+
 	ConnectionEPoll main_epoll;
 
 	fcntl(server_socket, F_SETFL, fcntl(server_socket, F_GETFL, 0) | O_NONBLOCK);
 	listen(server_socket,128);
 
 	main_epoll.fd = epoll_create(1);
+	main_epoll.connections = 0;
 	
 	struct epoll_event server_events = create_events(server_socket, EPOLLIN | EPOLLOUT | EPOLLET);
 	epoll_ctl(main_epoll.fd, EPOLL_CTL_ADD, server_socket, &server_events);
-	
+
+
 	for (;;)
 	{
 		int num_events = epoll_wait(main_epoll.fd, main_epoll.event_buffer, EVENT_BUFFER_LEN, -1);
@@ -414,6 +483,50 @@ main(void)
 				fcntl(new_connection_fd, F_SETFL, fcntl(new_connection_fd, F_GETFL, 0) | O_NONBLOCK);
 				
 				struct epoll_event client_events = create_events(new_connection_fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLET);
+				main_epoll.connections++;
+				if ( main_epoll.connections > MAX_LOOP )
+				{
+					main_epoll.connections--;
+
+					bool found = false;
+					for (int i=0; i<subroutines.size; i++)
+					{
+						if ( subroutines.epolls[i].connections < MAX_LOOP )
+						{
+							found = true;
+							epoll_ctl(subroutines.epolls[i].fd, EPOLL_CTL_ADD, new_connection_fd, &client_events);
+							break;
+						}
+					}
+					
+					if ( found == true )
+					{
+						continue;
+					}
+					
+					subroutines.size++;
+					subroutines.epolls = realloc(subroutines.epolls, subroutines.size*sizeof(ConnectionEPoll));
+					subroutines.epolls[subroutines.size-1].fd = epoll_create(1);
+					
+					epoll_ctl(subroutines.epolls[subroutines.size-1].fd, EPOLL_CTL_ADD, new_connection_fd, &client_events);
+					
+					subroutines.thread_list_size++;
+					subroutines.thread_list = realloc(subroutines.thread_list, subroutines.thread_list_size*sizeof(pthread_t));
+					
+					LoopArguments* subroutine_arguments = malloc(sizeof(LoopArguments));
+					subroutine_arguments->epoll = &subroutines.epolls[subroutines.size-1];
+					subroutine_arguments->packet_log = packet_log;
+				
+					pthread_create(
+						subroutines.thread_list+subroutines.thread_list_size-1,
+						NULL,
+						secondary_event_poll,
+						subroutine_arguments
+					);
+				
+					continue;
+				}
+
 				epoll_ctl(main_epoll.fd, EPOLL_CTL_ADD, new_connection_fd, &client_events);
 				continue;
 			}
@@ -435,6 +548,7 @@ main(void)
 
 			if ( main_epoll.event_buffer[i].events & (EPOLLRDHUP | EPOLLHUP) )
 			{
+				main_epoll.connections--;
 				epoll_ctl(main_epoll.fd, EPOLL_CTL_DEL, main_epoll.event_buffer[i].data.fd, NULL);
 				close(main_epoll.event_buffer[i].data.fd);	
 			}
