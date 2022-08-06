@@ -13,7 +13,14 @@
  */
 
 #include <stdio.h>
+
+#ifdef USE_POLL
 #include <poll.h>
+#endif
+#ifndef USE_POLL
+#include <sys/epoll.h>
+#endif
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdbool.h>
@@ -27,9 +34,10 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#define EVENT_BUFFER_LEN 32
 #define MAX_LOOP 50
 
-#define MAX_PACKET_HIST 100
+#define MAX_PACKET_HIST 10 
 //Packet buffer, and shared memory size
 #define SIZE 5*1024*1024
 
@@ -57,7 +65,7 @@ typedef struct packet
 
 typedef struct packet_history
 {
-	Packet* packets;
+	Packet** packets;
 	size_t  size;
 	int offset;
 } PacketHistory;
@@ -74,11 +82,21 @@ typedef struct interface_args
 	PacketHistory* packet_list;
 } InterfaceArguments;
 
+#ifdef USE_POLL
 typedef struct connection_poll
 {
 	struct pollfd* poll_buffer;
 	size_t size;
 } ConnectionPoll;
+#endif
+
+#ifndef USE_POLL
+typedef struct connection_epoll
+{
+	struct epoll_event event_buffer[EVENT_BUFFER_LEN];
+	int fd;
+} ConnectionEPoll;
+#endif
 
 /*
  *	Reads from the input buffer, and responds to commands accordingly. The following commands are supported:
@@ -146,10 +164,10 @@ handle_output(void* ptr)
 
 			memcpy(
 				write_data,
-				input->packet_list->packets[write_header->argument].bytes,
-				input->packet_list->packets[write_header->argument].size
+				input->packet_list->packets[write_header->argument]->bytes,
+				input->packet_list->packets[write_header->argument]->size
 			);
-			write_header->size = input->packet_list->packets[write_header->argument].size;
+			write_header->size = input->packet_list->packets[write_header->argument]->size;
 			write_header->bitmask = WRITE_HEADER_SET;
 		}
 	}
@@ -171,6 +189,7 @@ get_shared_mem(const char* filename,size_t size)
 	return output;
 }
 
+#ifdef USE_POLL
 void*
 secondary_event_poll(void* args)
 {
@@ -189,6 +208,56 @@ secondary_event_poll(void* args)
 			
 	}
 	return NULL;
+}
+#endif
+
+/*
+ *	Boilerplate
+ */
+struct epoll_event
+create_events(int fd, unsigned int events) {
+	struct epoll_event output;
+	output.events = events;
+	output.data.fd = fd;
+	return output;
+}
+
+/*
+ *	Takes a heap-allocated buffer and turns it into a packet.
+ */
+Packet*
+into_packet(int in_fd, char* buff, size_t buff_len)
+{
+	Packet* output = malloc(sizeof(Packet));
+	output->connection_fd = in_fd;
+	output->size = buff_len;
+	output->bytes = buff;
+	return output;
+}
+
+/*
+ *	Copies a stack-allocated buffer into the heap and returns it as a new packet.
+ */
+Packet*
+new_packet(int in_fd, char* buff, size_t buff_len)
+{
+	Packet* output = malloc(sizeof(Packet));
+	output->connection_fd = in_fd;
+	output->size = buff_len;
+	output->bytes = malloc(buff_len);
+	memcpy(output->bytes, buff, buff_len);
+	return output;
+}
+
+/*
+ *	Appends a packet into packet history
+ */
+void
+append_packet(PacketHistory* hist, Packet* packet)
+{
+	hist->size++;
+	hist->packets = realloc(hist->packets, hist->size*sizeof(Packet));
+	hist->packets[hist->size-1] = packet;
 }
 
 /*
@@ -213,16 +282,7 @@ main(void)
 	
 	curr_connections->file_descriptors = malloc(sizeof(int));
 	packet_log->packets = malloc(sizeof(Packet));
-
-	ConnectionPoll* main_poll = malloc(sizeof(ConnectionPoll));
-	main_poll->poll_buffer = malloc(sizeof(struct pollfd));
-
-	struct poll_list {
-		pthread_t*      thread_list;
-		size_t          thread_list_size;
-		ConnectionPoll* polls;
-		size_t          size;
-	} connection_polls;
+	
 	
 	/*
 	 *	Setup threads and their respective required data structures
@@ -254,25 +314,37 @@ main(void)
 	
 	struct sockaddr_in address;
 	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htonl(2096);
-	socklen_t address_length = sizeof(address);
+	address.sin_addr.s_addr = htonl(INADDR_ANY);
+	address.sin_port = htons(2096);
 
-	bind(server_socket,(struct sockaddr*)&address,address_length);
-	listen(server_socket,128);
+	bind(server_socket,(struct sockaddr*)&address,sizeof(address));
 	
+	#ifdef USE_POLL
+	listen(server_socket,128);
 	/*
 	 *	Run event pool
 	 */
+	ConnectionPoll* main_poll = malloc(sizeof(ConnectionPoll));
+	main_poll->poll_buffer = malloc(sizeof(struct pollfd));
+
 	main_poll->poll_buffer[0].fd = server_socket;
 	main_poll->poll_buffer[0].events = POLLIN;
+	main_poll->size = 1;
 	
+	struct poll_list {
+		pthread_t*      thread_list;
+		size_t          thread_list_size;
+		ConnectionPoll* polls;
+		size_t          size;
+	} connection_polls;
 
+	
 	for (;;)
 	{
-		struct pollfd* new_connections;
+		/*
+		struct pollfd* new_connections = malloc(sizeof(struct pollfd));
 		int	       new_connections_size = 0;
-
+		*/
 
 		int ready = poll(main_poll->poll_buffer,main_poll->size,-1);
 
@@ -280,55 +352,58 @@ main(void)
 		{
 			exit(EXIT_FAILURE);
 		}
-
-		for (int i=0; i<main_poll->size; i++)
+		if (main_poll->poll_buffer[0].revents & POLLIN) //Accept incoming connections
 		{
+			struct sockaddr_in client_addr;
+			int client_addr_len = sizeof(client_addr);
+			int new_confd = accept(server_socket,(struct sockaddr*)&client_addr,&client_addr_len);
 			
-			if (main_poll->poll_buffer[i].revents != 0)
-			{
-				if (i == 0) //Accept incoming connections
-				{
-					int new_confd = accept(server_socket,(struct sockaddr*)&address,&address_length);
-					new_connections_size++;
-					new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
-					new_connections[new_connections_size-1].fd = new_confd;
-					new_connections[new_connections_size-1].events = POLLIN;
-					continue;
-				}
-				
-				//Receive packets	
-				char* packet_buf = malloc(SIZE);
-				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,MSG_DONTWAIT);
+			/*
+			new_connections_size++;
+			new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
+			new_connections[new_connections_size-1].fd = new_confd;
+			new_connections[new_connections_size-1].events = POLLIN;
+			*/
+			main_poll->size++;
+			main_poll->poll_buffer = realloc(main_poll->poll_buffer,main_poll->size*sizeof(struct pollfd));
+			main_poll->poll_buffer[main_poll->size-1].fd = new_confd;
+			main_poll->poll_buffer[main_poll->size-1].events = POLLIN;
+		}
+		
 
-				if (bytes_read == -1)
+		for (int i=1; i<main_poll->size; i++)
+		{
+
+			if (main_poll->poll_buffer[i].revents & POLLIN)
+			{
+				//Receive packets	
+				char *packet_buf = malloc(SIZE); 
+				ssize_t bytes_read = recv(main_poll->poll_buffer[i].fd,packet_buf,SIZE,0);
+
+				if (bytes_read == -1 || bytes_read == 0)
 				{
 					free(packet_buf);
+					close(main_poll->poll_buffer[i].fd);
+					main_poll->size--;
+					memmove(&main_poll->poll_buffer[i],&main_poll->poll_buffer[i+1],main_poll->size-i);
 					continue;
 				}
-				packet_buf = realloc(packet_buf,bytes_read);	
 				
-				//Append new pakcets into the packet history
-				packet_log->size++;
-				packet_log->packets = realloc(packet_log->packets,packet_log->size*sizeof(Packet));
-				packet_log->packets[packet_log->size-1].connection_fd = main_poll->poll_buffer[i].fd;
-				packet_log->packets[packet_log->size-1].bytes = packet_buf;
-				packet_log->packets[packet_log->size-1].size = bytes_read;
-				
-				//Delete older packets whenever packet history gets too long
-				if (packet_log->size > MAX_PACKET_HIST )
-				{
-					memmove(packet_log->packets, packet_log->packets+packet_log->size-(MAX_PACKET_HIST/3), MAX_PACKET_HIST/3);
-					packet_log->packets = realloc(packet_log->packets,MAX_PACKET_HIST/3);
-				}
+				packet_buf = realloc(packet_buf, bytes_read);
+				append_packet(packet_log, into_packet(main_poll->pull_buffer[i].fd,packet_buf, bytes_read));
+
+				write(STDOUT_FILENO, packet_log->packets[packet_log->size-1].bytes, packet_log->packets[packet_log->size-1].size);
 			}
 
 		}
 		
 		//Check whether we have new connections to append to the event loop
+		/*
 		if (new_connections_size == 0) 
 			continue;
-		
+		*/
 		//Append incoming connections into other polls in case ours is full	
+		/*
 		if (main_poll->size > MAX_LOOP)
 		{
 			bool found_poll = false;
@@ -355,14 +430,70 @@ main(void)
 			}
 			continue;	
 		}
-
+		*/
 		//Append the new connection to our poll in case it's not full
+		/*
 		main_poll->poll_buffer = realloc(main_poll->poll_buffer, (main_poll->size+new_connections_size)*sizeof(struct pollfd));
 		for (int i=0; i<new_connections_size; i++)
 		{
 			fcntl(new_connections[i].fd, F_SETFL, fcntl(new_connections[i].fd, F_GETFL, 0) | O_NONBLOCK);
 		}
-		memcpy(&main_poll[main_poll->size-1],new_connections,new_connections_size*sizeof(struct pollfd));
+		memcpy(&main_poll->poll_buffer[main_poll->size],new_connections,new_connections_size*sizeof(struct pollfd));
 		main_poll->size += new_connections_size;
+		*/
 	}
+	#endif
+
+	#ifndef USE_POLL
+	ConnectionEPoll main_epoll;
+
+	fcntl(server_socket, F_SETFL, fcntl(server_socket, F_GETFL, 0) | O_NONBLOCK);
+	listen(server_socket,128);
+
+	main_epoll.fd = epoll_create(1);
+	
+	struct epoll_event server_events = create_events(server_socket, EPOLLIN | EPOLLOUT | EPOLLET);
+	epoll_ctl(main_epoll.fd, EPOLL_CTL_ADD, server_socket, &server_events);
+	
+	for (;;)
+	{
+		int num_events = epoll_wait(main_epoll.fd, main_epoll.event_buffer, EVENT_BUFFER_LEN, -1);
+		
+		for (int i=0; i < num_events; i++)
+		{
+			if ( main_epoll.event_buffer[i].data.fd == server_socket )
+			{
+				struct sockaddr_in new_connection_address;
+				int new_connection_len = sizeof(new_connection_address);
+				int new_connection_fd = accept(server_socket, (struct sockaddr*)&new_connection_address, &new_connection_len);	
+				fcntl(new_connection_fd, F_SETFL, fcntl(new_connection_fd, F_GETFL, 0) | O_NONBLOCK);
+				
+				struct epoll_event client_events = create_events(new_connection_fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLET);
+				epoll_ctl(main_epoll.fd, EPOLL_CTL_ADD, new_connection_fd, &client_events);
+				continue;
+			}
+
+			if ( main_epoll.event_buffer[i].events & EPOLLIN )
+			{
+				char *packet_buff = malloc(SIZE);
+				ssize_t bytes_read = recv(main_epoll.event_buffer[i].data.fd, packet_buff, SIZE, 0);
+
+				if (bytes_read == -1)
+				{
+					free(packet_buff);
+					continue;
+				}
+				packet_buff = realloc(packet_buff, bytes_read);
+				append_packet(packet_log, into_packet(main_epoll.event_buffer[i].data.fd, packet_buff,bytes_read));
+				continue;
+			}
+
+			if ( main_epoll.event_buffer[i].events & (EPOLLRDHUP | EPOLLHUP) )
+			{
+				epoll_ctl(main_epoll.fd, EPOLL_CTL_DEL, main_epoll.event_buffer[i].data.fd, NULL);
+				close(main_epoll.event_buffer[i].data.fd);	
+			}
+		}
+	}
+	#endif
 }
