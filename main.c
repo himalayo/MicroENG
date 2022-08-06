@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#define EVENT_BUFFER_LEN 32
 #define MAX_LOOP 50
 
 #define MAX_PACKET_HIST 10 
@@ -74,11 +75,21 @@ typedef struct interface_args
 	PacketHistory* packet_list;
 } InterfaceArguments;
 
+#ifdef USE_POLL
 typedef struct connection_poll
 {
 	struct pollfd* poll_buffer;
 	size_t size;
 } ConnectionPoll;
+#endif
+
+#ifndef USE_POLL
+typedef struct connection_epoll
+{
+	struct epoll_events event_buffer[EVENT_BUFFER_LEN];
+	int fd;
+} ConnectionEPoll;
+#endif
 
 /*
  *	Reads from the input buffer, and responds to commands accordingly. The following commands are supported:
@@ -192,6 +203,56 @@ secondary_event_poll(void* args)
 }
 
 /*
+ *	Boilerplate
+ */
+struct epoll_event
+create_events(int fd, unsigned int events) {
+	struct epoll_event output;
+	output.events = events;
+	output.fd = fd;
+	return output;
+}
+
+/*
+ *	Takes a heap-allocated buffer and turns it into a packet.
+ */
+Packet*
+into_packet(int in_fd, char* buff, size_t buff_len)
+{
+	Packet* output = malloc(sizeof(Packet));
+	output->connection_fd = in_fd;
+	output->size = buff_len;
+	output->bytes = buff;
+	return output;
+}
+
+/*
+ *	Copies a stack-allocated buffer into the heap and returns it as a new packet.
+ */
+Packet*
+new_packet(int in_fd, char* buff, size_t buff_len)
+{
+	Packet* output = malloc(sizeof(Packet));
+	output->connection_fd = in_fd;
+	output->size = buff_len;
+	output->bytes = malloc(buff_len);
+	memcpy(output->bytes, buff, buff_len);
+	return output;
+}
+
+/*
+ *	Appends a packet into packet history
+ */
+void
+append_packet(PacketHistory* hist, Packet* packet)
+{
+	hist->size++;
+	hist->packets = realloc(hist->packets, hist->size*sizeof(Packet));
+	hist->packets[hist->size-1] = packet;
+	return output;	
+}
+
+/*
  *	Manages program's state
  */
 void
@@ -255,8 +316,9 @@ main(void)
 	address.sin_port = htons(2096);
 
 	bind(server_socket,(struct sockaddr*)&address,sizeof(address));
-	listen(server_socket,128);
 	
+	#ifdef USE_POLL
+	listen(server_socket,128);
 	/*
 	 *	Run event pool
 	 */
@@ -266,7 +328,8 @@ main(void)
 	main_poll->poll_buffer[0].fd = server_socket;
 	main_poll->poll_buffer[0].events = POLLIN;
 	main_poll->size = 1;
-
+	
+	
 	for (;;)
 	{
 		/*
@@ -310,6 +373,7 @@ main(void)
 
 				if (bytes_read == -1 || bytes_read == 0)
 				{
+					close(main_poll->poll_buffer[i].fd);
 					main_poll->size--;
 					memmove(&main_poll->poll_buffer[i],&main_poll->poll_buffer[i+1],main_poll->size-i);
 					continue;
@@ -378,4 +442,54 @@ main(void)
 		main_poll->size += new_connections_size;
 		*/
 	}
+	#endif
+
+	#ifndef USE_POLL
+	ConnectionEPoll main_epoll;
+
+	fcntl(server_socket, F_SETFL, fcntl(server_socket, F_GETFL, 0) | O_NONBLOCK);
+	listen(server_socket,128);
+
+	int main_epoll.fd = epoll_create(1);
+	
+	epoll_ctl(main_epoll.fd, EPOLL_CTL_ADD, server_socket, &create_events(server_socket, EPOLLIN | EPOLLOUT | EPOLLET));
+	
+	for (;;)
+	{
+		int num_events = epoll_wait(main_epoll.fd, main_epoll.event_buffer, EVENT_BUFFER_LEN, -1);
+		
+		for (int i=0; i < num_events; i++)
+		{
+			if ( main_epoll.event_buffer[i].data.fd == server_socket )
+			{
+				struct sockaddr_in new_connection_address;
+				int new_connection_len = sizeof(new_connection_address);
+				int new_connection_fd = accept(server_socket, &new_connection_address, &new_connection_len);	
+				fcntl(new_connection_fd, F_SETFL, fcntl(new_connection_fd, F_GETFL, 0) | O_NONBLOCK);
+				epoll_ctl(new_connection_fd, EPOLL_CTL_ADD, new_connection_fd, &create_events(new_connection_fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLET));
+				continue;
+			}
+
+			if ( main_epoll.event_bufffer[i].events & EPOLLIN )
+			{
+				char *packet_buff = malloc(MAX_SIZE);
+				ssize_t bytes_read = recv(server_socket, packet_buff, MAX_SIZE, MSG_DONTWAIT);
+
+				if (bytes_read == -1)
+				{
+					continue;
+				}
+				
+
+
+				continue;
+			}
+
+			if ( main_epoll.event_buffer[i].events & (EPOLLRDHUP | EPOLLHUP) )
+			{
+				
+			}
+		}
+	}
+	#endif
 }
