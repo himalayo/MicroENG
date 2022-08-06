@@ -341,11 +341,6 @@ main(void)
 	
 	for (;;)
 	{
-		/*
-		struct pollfd* new_connections = malloc(sizeof(struct pollfd));
-		int	       new_connections_size = 0;
-		*/
-
 		int ready = poll(main_poll->poll_buffer,main_poll->size,-1);
 
 		if (ready == -1)
@@ -358,12 +353,6 @@ main(void)
 			int client_addr_len = sizeof(client_addr);
 			int new_confd = accept(server_socket,(struct sockaddr*)&client_addr,&client_addr_len);
 			
-			/*
-			new_connections_size++;
-			new_connections = realloc(new_connections,sizeof(struct pollfd)*new_connections_size);
-			new_connections[new_connections_size-1].fd = new_confd;
-			new_connections[new_connections_size-1].events = POLLIN;
-			*/
 			main_poll->size++;
 			main_poll->poll_buffer = realloc(main_poll->poll_buffer,main_poll->size*sizeof(struct pollfd));
 			main_poll->poll_buffer[main_poll->size-1].fd = new_confd;
@@ -397,50 +386,6 @@ main(void)
 
 		}
 		
-		//Check whether we have new connections to append to the event loop
-		/*
-		if (new_connections_size == 0) 
-			continue;
-		*/
-		//Append incoming connections into other polls in case ours is full	
-		/*
-		if (main_poll->size > MAX_LOOP)
-		{
-			bool found_poll = false;
-			for (int i=0; i<connection_polls.size; i++)
-			{
-				if (connection_polls.polls[i].size < MAX_LOOP)
-				{
-					connection_polls.polls[i].poll_buffer = realloc(connection_polls.polls[i].poll_buffer,sizeof(struct pollfd)*(connection_polls.polls[i].size+new_connections_size));
-					memcpy(connection_polls.polls[i].poll_buffer+connection_polls.polls[i].size,new_connections,new_connections_size*sizeof(struct pollfd));
-					connection_polls.polls[i].size += new_connections_size;
-					
-					found_poll = true;
-					
-					break;
-				}
-			}
-			
-			//Create new poll in seperate thread i case every other poll is already filled
-			if (!found_poll)
-			{
-				connection_polls.thread_list_size++;
-				connection_polls.thread_list = realloc(connection_polls.thread_list,sizeof(pthread_t)*connection_polls.thread_list_size);
-				pthread_create(&connection_polls.thread_list[connection_polls.thread_list_size-1],NULL,secondary_event_poll,(void*)&connection_polls.polls[connection_polls.size-1]);
-			}
-			continue;	
-		}
-		*/
-		//Append the new connection to our poll in case it's not full
-		/*
-		main_poll->poll_buffer = realloc(main_poll->poll_buffer, (main_poll->size+new_connections_size)*sizeof(struct pollfd));
-		for (int i=0; i<new_connections_size; i++)
-		{
-			fcntl(new_connections[i].fd, F_SETFL, fcntl(new_connections[i].fd, F_GETFL, 0) | O_NONBLOCK);
-		}
-		memcpy(&main_poll->poll_buffer[main_poll->size],new_connections,new_connections_size*sizeof(struct pollfd));
-		main_poll->size += new_connections_size;
-		*/
 	}
 	#endif
 
