@@ -19,7 +19,7 @@ get_shared_mem(const char* filename,size_t size)
 	int fd = shm_open(filename,O_RDWR|O_CREAT,S_IRWXU|S_IRWXG|S_IRWXO);
 	ftruncate(fd,size);
 	void* output = mmap(NULL,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
-	close(fd);
+	memset(output,0,size);
 	return output;
 }
 
@@ -89,7 +89,7 @@ context_name(context* ctx, char* name)
 	strcat(reads,"microengreads");
 	
 	ctx->ipc = ipc_data_init(get_shared_mem(writes, 5*1024*1024), get_shared_mem(reads,5*1024*102));
-	
+
 	#ifdef DEBUG
 	strcat(writes,"\n");
 	write(STDOUT_FILENO,writes,strlen(writes));

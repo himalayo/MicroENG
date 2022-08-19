@@ -74,7 +74,7 @@ ipc_read(void* args)
 					packet* last_packet = vector_pop(ctx->packet_log);
 					pthread_mutex_unlock(ctx->mutex);
 					
-					memcpy(ctx->ipc.read.buffer+sizeof(header), last_packet->bytes, last_packet->size);
+					memcpy((char*)(ctx->ipc.read.buffer+sizeof(ipc_header)), last_packet->bytes, last_packet->size);
 					header->args = last_packet->fd;
 					header->len = last_packet->size;
 					header->opcode = HEADER_DONE;

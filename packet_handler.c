@@ -55,8 +55,6 @@ handle_packets(void* args)
 				pthread_mutex_lock(this->mutex);
 				vector_push(this->packet_log, &new_packet);
 				pthread_mutex_unlock(this->mutex);
-
-				print_packet(*(packet*)vector_last(this->packet_log));
 				continue;
 			}
 			

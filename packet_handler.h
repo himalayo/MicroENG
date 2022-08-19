@@ -12,5 +12,6 @@ typedef struct packet_handler {
 	int epoll_fd;
 } handler;
 
+void print_packet(packet);
 handler* handler_init();
 void* handle_packets(void* args);
