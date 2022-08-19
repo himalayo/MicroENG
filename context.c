@@ -19,6 +19,7 @@ get_shared_mem(const char* filename,size_t size)
 	int fd = shm_open(filename,O_RDWR|O_CREAT,S_IRWXU|S_IRWXG|S_IRWXO);
 	ftruncate(fd,size);
 	void* output = mmap(NULL,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+	close(fd);
 	memset(output,0,size);
 	return output;
 }
