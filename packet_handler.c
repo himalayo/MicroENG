@@ -33,25 +33,21 @@ void*
 handle_packets(void* args)
 {
 	handler* this = (handler*)args;
-	//char debug[70];
 	for(;;)
 	{	
 		struct epoll_event events[42];
 		int num_events = epoll_wait(this->epoll_fd,events,42,-1);
-		
 		for (int i=0; i<num_events; i++)
 		{
 			if ( events[i].events & EPOLLIN )
 			{
 				packet new_packet = {.fd = events[i].data.fd, .bytes = malloc(MAX_PACKET)};
 				new_packet.size = recv(events[i].data.fd,new_packet.bytes,MAX_PACKET,MSG_DONTWAIT);
-				if ( new_packet.size <= 0 )
+				if ( new_packet.size <= 0 || *this->prefix != *(int*)new_packet.bytes )
 				{
 					free(new_packet.bytes);
 					continue;
-				}
-				new_packet.bytes = realloc(new_packet.bytes, new_packet.size);
-				
+				}				
 				pthread_mutex_lock(this->mutex);
 				vector_push(this->packet_log, &new_packet);
 				pthread_mutex_unlock(this->mutex);

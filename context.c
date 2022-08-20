@@ -113,3 +113,9 @@ context_stop(context* ctx)
 	ctx->ipc.read.spinlock = false;
 	ctx->ipc.write.spinlock = false;
 }
+
+void
+context_prefix(context* ctx, int prefix)
+{
+	ctx->client_handler->prefix = prefix;
+}

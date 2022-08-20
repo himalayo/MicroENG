@@ -21,3 +21,4 @@ context* context_init(int);
 void context_spin(context*);
 void context_stop(context*);
 void context_name(context*,char*);
+void context_prefix(context*,int);

@@ -10,6 +10,7 @@ typedef struct packet_handler {
 	vector* packet_log;
 	int num_conns;
 	int epoll_fd;
+	int* prefix;
 } handler;
 
 void print_packet(packet);

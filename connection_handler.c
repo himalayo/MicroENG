@@ -42,11 +42,12 @@ assign(vector* handlers, int conn_fd)
  *	Spawns a new packet handler and pushes it into a packet handler vector
  */
 void
-spawn_handler(vector* handler_vector,vector* packet_log, pthread_mutex_t* mutex)
+spawn_handler(vector* handler_vector,vector* packet_log, pthread_mutex_t* mutex, int* prefix)
 {
 	handler* handler = handler_init();
 	handler->packet_log = packet_log;
 	handler->mutex = mutex;
+	handler->prefix = prefix;
 	pthread_create(&handler->thread, NULL, handle_packets, handler);
 	vector_push(handler_vector, handler);	
 }
@@ -63,14 +64,13 @@ connection_loop(void* args)
 	vector* active_handlers = vector_init(sizeof(handler));
 	vector* available_handlers = vector_init(sizeof(handler));
 	
-	spawn_handler(active_handlers, this->packet_log, this->mutex);
+	spawn_handler(active_handlers, this->packet_log, this->mutex,&this->prefix);
 	vector_push(available_handlers, vector_last(active_handlers));
 
 	for (;;)
 	{
 		struct epoll_event events[MAX_CONNS_AT_ONCE];
 		int new_connections = epoll_wait(epoll, events, MAX_CONNS_AT_ONCE, 0);
-		
 		if ( new_connections == -1 )
 		{
 			//	Something went wrong :(
@@ -99,7 +99,7 @@ connection_loop(void* args)
 
 		if ( available_handlers->length == 0 )
 		{
-			spawn_handler(active_handlers, this->packet_log, this->mutex);
+			spawn_handler(active_handlers, this->packet_log, this->mutex, &this->prefix);
 			vector_push(available_handlers, vector_last(active_handlers));
 		}
 	}

@@ -98,6 +98,13 @@ main(void)
 			free(curr_line);
 			continue;
 		}
+		
+		if ( strcmp(start, "get_pfix") == 0 )
+		{
+			puts((char*)&curr_ctx->client_handler->prefix);
+			free(curr_line);
+			continue;
+		}
 
 		if ( strcmp(start, "strt_ctx") == 0 )
 		{
@@ -109,6 +116,13 @@ main(void)
 		if ( strcmp(start, "chng_ctx") == 0 )
 		{
 			curr_ctx = ((context_runtime*)vector_get(contexts,atoi(curr_line+9)))->ctx;
+			free(curr_line);
+			continue;
+		}
+		
+		if ( strcmp(start, "pfix_ctx") == 0 )
+		{
+			context_prefix(curr_ctx,atoi(curr_line+9));
 			free(curr_line);
 			continue;
 		}
