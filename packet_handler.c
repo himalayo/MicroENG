@@ -47,7 +47,8 @@ handle_packets(void* args)
 				{
 					free(new_packet.bytes);
 					continue;
-				}				
+				}
+				new_packet.bytes = realloc(new_packet.bytes,new_packet.size);
 				pthread_mutex_lock(this->mutex);
 				vector_push(this->packet_log, &new_packet);
 				pthread_mutex_unlock(this->mutex);

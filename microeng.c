@@ -101,7 +101,7 @@ main(void)
 		
 		if ( strcmp(start, "get_pfix") == 0 )
 		{
-			puts((char*)&curr_ctx->client_handler->prefix);
+			puts((char*)curr_ctx->client_handler->prefix);
 			free(curr_line);
 			continue;
 		}
