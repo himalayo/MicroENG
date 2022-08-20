@@ -6,6 +6,6 @@ void
 main(void)
 {
 	char lol[20];
-	sprintf(lol,"%d",*(int*)"HTTP");
+	sprintf(lol,"%d",*(int*)"GET ");
 	printf(lol);
 }

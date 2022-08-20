@@ -70,21 +70,8 @@ connection_loop(void* args)
 	for (;;)
 	{
 		struct epoll_event events[MAX_CONNS_AT_ONCE];
-		int new_connections = epoll_wait(epoll, events, MAX_CONNS_AT_ONCE, 0);
-		if ( new_connections == -1 )
-		{
-			//	Something went wrong :(
-			break;
-		}
-		if ( new_connections > 0 )
-		{
-			struct sockaddr_in new_connection_address;
-			int new_connection_len = sizeof(new_connection_address);
-			int new_connection_fd = accept(this->server_fd, (struct sockaddr*)&new_connection_address, &new_connection_len);	
-			fcntl(new_connection_fd, F_SETFL, fcntl(new_connection_fd, F_GETFL, 0) | O_NONBLOCK);
-			assign(available_handlers, new_connection_fd);
-		}
-
+		int new_connections = epoll_wait(epoll, events, MAX_CONNS_AT_ONCE, -1);
+		
 		//	Check for available connection handlers
 		vector_clear(available_handlers);
 		for (int i=0; i<active_handlers->length; i++)
@@ -102,5 +89,22 @@ connection_loop(void* args)
 			spawn_handler(active_handlers, this->packet_log, this->mutex, &this->prefix);
 			vector_push(available_handlers, vector_last(active_handlers));
 		}
+		
+		if ( new_connections == -1 )
+		{
+			//	Something went wrong :(
+			break;
+		}
+		
+		if ( new_connections > 0 )
+		{
+			struct sockaddr_in new_connection_address;
+			int new_connection_len = sizeof(new_connection_address);
+			int new_connection_fd = accept(this->server_fd, (struct sockaddr*)&new_connection_address, &new_connection_len);	
+			fcntl(new_connection_fd, F_SETFL, fcntl(new_connection_fd, F_GETFL, 0) | O_NONBLOCK);
+			assign(available_handlers, new_connection_fd);
+		}
+
+	
 	}
 }
