@@ -11,6 +11,7 @@ typedef struct packet_handler {
 	int num_conns;
 	int epoll_fd;
 	int* prefix;
+	pthread_cond_t* new_packet;
 } handler;
 
 void print_packet(packet);

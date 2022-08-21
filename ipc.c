@@ -66,10 +66,16 @@ ipc_read(void* args)
 		ipc_header* header = ctx->ipc.read.buffer;
 		while(ctx->ipc.read.spinlock == true)
 		{
+			pthread_mutex_lock(ctx->mutex);
+					
+			while ( ctx->packet_log->length == 0 )
+			{
+				pthread_cond_wait(ctx->client_handler->new_packet, ctx->mutex);
+			}
+			pthread_mutex_unlock(ctx->mutex);
 			switch(header->opcode)
 			{
 				case HEADER_POP:
-								
 					pthread_mutex_lock(ctx->mutex);
 					packet* last_packet = vector_pop(ctx->packet_log);
 					pthread_mutex_unlock(ctx->mutex);

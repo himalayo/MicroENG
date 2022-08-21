@@ -1,6 +1,7 @@
 typedef struct connection_handler {
 	int server_fd;
 	pthread_mutex_t* mutex;
+	pthread_cond_t* new_packet;
 	vector* packet_log;
 	int prefix;
 } connection_handler;
