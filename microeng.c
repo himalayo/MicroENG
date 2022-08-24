@@ -169,6 +169,18 @@ main(int argc, char** argv)
 			free(curr_line);
 			continue;
 		}
+		if ( strcmp(start, "stop_rdb") == 0 )
+		{
+			context_read_stop(curr_ctx);
+			free(curr_line);
+			continue;
+		}
+		if ( strcmp(start, "stop_wrb") == 0 )
+		{
+			context_write_stop(curr_ctx);
+			free(curr_line);
+			continue;
+		}
 
 		if ( strcmp(start, "stop_ctx") == 0 )
 		{

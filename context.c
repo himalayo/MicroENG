@@ -110,7 +110,16 @@ context_write_spin(context* ctx)
 	ctx->ipc.write.spinlock = true;
 	pthread_cond_signal(&ctx->ipc.write.spin_cond);
 }
-
+void
+context_read_stop(context* ctx)
+{
+	ctx->ipc.read.spinlock = false;
+}
+void
+context_write_stop(context* ctx)
+{
+	ctx->ipc.write.spinlock = false;
+}
 void
 context_stop(context* ctx)
 {
