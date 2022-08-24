@@ -40,68 +40,75 @@ create_socket()
 
 
 void
-main(void)
+main(int argc, char** argv)
 {
 	//vector_module_test();
 	//void* write = get_shared_mem("/microengwrites", PACKET_MAX);
 	//void* read = get_shared_mem("/microengreads", PACKET_MAX);
 	
+	int out = STDOUT_FILENO;
+	int in = STDOUT_FILENO;
+
+	if ( argc > 1 )
+	{
+		out = atoi(argv[2]);
+		in = atoi(argv[1]);
+	}
 	int server = create_socket();
 	
 	vector* contexts = vector_init(sizeof(context_runtime)); 
-
-	puts("MicroENG");
+	
+	char out_buff[50];
+	
+	write(out,out_buff,snprintf(out_buff,sizeof(out_buff),"MicroENG\n"));
 	
 
 	context* curr_ctx = NULL;
 	for (;;) // Interface
 	{
-		/*
-		vector* packet_log = vector_init(sizeof(packet));
-		connection_handler* client_handler = malloc(sizeof(connection_handler));
-		client_handler->server_fd = server;
-		client_handler->packet_log = packet_log;
-	
-		pthread_mutex_t* packetlog_mutex = malloc(sizeof(pthread_mutex_t));
-		pthread_mutex_init(packetlog_mutex, NULL);
-
-		client_handler->mutex = packetlog_mutex;
-
-		pthread_t handler_thread;
-		pthreaid_create(&handler_thread, NULL, connection_loop, client_handler);
-		*/
-		
-		// Read from STDIN
-		size_t size = 16;
+		size_t size = 50;
 		char* curr_line = malloc(size);
-		ssize_t bytes_read = getline(&curr_line, &size, stdin);
-
-		if ( bytes_read < 1 )
+		
+		size_t bytes_read = 0;
+		char curr_char;
+		while (read(in,&curr_char,1))
 		{
-			free(curr_line);
-			continue;
+			if ( bytes_read > size )
+			{
+				size *=2;
+				curr_line = realloc(curr_line,size);
+			}
+			curr_line[bytes_read] = curr_char;
+			bytes_read++;
+			
+			if ( curr_char == '\0' || curr_char == '\n' )
+			{
+				break;
+			}
 		}
 		
+	//	write(out,out_buff,snprintf(out_buff,sizeof(out_buff),curr_line));
+
 		char* start = malloc(8);
 		strncpy(start,curr_line,8);
 		
 		if ( strcmp(start, "get_spin") == 0 )
 		{
-			puts(curr_ctx->ipc.read.spinlock ? "yes" : "no");
+			write(out,out_buff,snprintf(out_buff,sizeof(out_buff),curr_ctx->ipc.read.spinlock ? "yes\n" : "no\n\0"));
 			free(curr_line);
 			continue;
 		}
 
 		if ( strcmp(start, "get_name") == 0 )
 		{
-			puts(curr_ctx->name);	
+			write(out,out_buff,snprintf(out_buff,sizeof(out_buff),"%s\n",curr_ctx->name));	
 			free(curr_line);
 			continue;
 		}
 		
 		if ( strcmp(start, "get_pfix") == 0 )
 		{
-			puts((char*)&curr_ctx->client_handler->prefix);
+			write(out,out_buff,snprintf(out_buff,sizeof(out_buff),"%d\n",curr_ctx->client_handler->prefix));
 			free(curr_line);
 			continue;
 		}
@@ -149,13 +156,20 @@ main(void)
 			continue;
 		}
 		
-		if ( strcmp(start, "spin_ctx") == 0 )
+		if ( strcmp(start, "spin_rdb") == 0 )
 		{
-			context_spin(curr_ctx);	
+			context_read_spin(curr_ctx);	
 			free(curr_line);
 			continue;
 		}
-		
+
+		if ( strcmp(start, "spin_wrb") == 0 )
+		{
+			context_write_spin(curr_ctx);
+			free(curr_line);
+			continue;
+		}
+
 		if ( strcmp(start, "stop_ctx") == 0 )
 		{
 			context_stop(curr_ctx);

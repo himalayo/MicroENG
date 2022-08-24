@@ -98,12 +98,16 @@ context_name(context* ctx, char* name)
 }
 
 void
-context_spin(context* ctx)
+context_read_spin(context* ctx)
 {
 	ctx->ipc.read.spinlock = true;
-	ctx->ipc.write.spinlock = true;
-
 	pthread_cond_signal(&ctx->ipc.read.spin_cond);
+}
+
+void
+context_write_spin(context* ctx)
+{
+	ctx->ipc.write.spinlock = true;
 	pthread_cond_signal(&ctx->ipc.write.spin_cond);
 }
 

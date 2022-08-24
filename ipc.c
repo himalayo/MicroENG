@@ -42,11 +42,6 @@ ipc_read(void* args)
 {
 	context* ctx = (context*)args;
 
-	#ifdef DEBUG
-	char test_message[60] = "\n";
-	size_t size = strlen(test_message);
-	#endif
-
 	for (;;)
 	{
 		pthread_mutex_lock(&ctx->ipc.read.mutex);
@@ -55,13 +50,6 @@ ipc_read(void* args)
 			pthread_cond_wait(&ctx->ipc.read.spin_cond, &ctx->ipc.read.mutex);
 		}
 		pthread_mutex_unlock(&ctx->ipc.read.mutex);
-	
-		#ifdef DEBUG
-		memset(test_message,'\0',size);
-		strcpy(test_message,"started spinning\n");
-		size = strlen(test_message);
-		write(STDOUT_FILENO,test_message,size);
-		#endif
 	
 		ipc_header* header = ctx->ipc.read.buffer;
 		while(ctx->ipc.read.spinlock == true)
@@ -90,12 +78,6 @@ ipc_read(void* args)
 			}
 		}
 
-		#ifdef DEBUG
-		memset(test_message,'\0',size);
-		strcpy(test_message,"stopped spinning\n");
-		size = strlen(test_message);
-		write(STDOUT_FILENO,test_message,size);	
-		#endif
 	}
 
 	return NULL;
@@ -121,12 +103,11 @@ ipc_write(void* args)
 			switch(header->opcode)
 			{
 				case HEADER_SEND:
-
 					send(
 						header->args,
 						ctx->ipc.write.buffer+sizeof(ipc_header),
 						header->len,
-						0	
+						0
 					);
 
 					header->opcode = HEADER_DONE;	
