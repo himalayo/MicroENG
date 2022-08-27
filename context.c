@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <string.h>
 
+#include "hash_table.h"
 #include "vec.h"
 #include "packet_handler.h"
 #include "connection_handler.h"
@@ -45,14 +46,14 @@ launch_context(context* ctx)
 }
 
 context*
-context_init(int server_fd)
+context_init(int server_fd,hash_table* prefix)
 {
 	context* output = malloc(sizeof(context));
 	output->server_fd = server_fd;
 	output->mutex = malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(output->mutex, NULL);
 	output->packet_log = vector_init(sizeof(packet));
-	output->client_handler = connection_handler_init(server_fd, output->packet_log, output->mutex);
+	output->client_handler = connection_handler_init(server_fd, output->packet_log, output->mutex,prefix);
 	output->name = NULL;
 	return output;
 }
@@ -130,5 +131,14 @@ context_stop(context* ctx)
 void
 context_prefix(context* ctx, int prefix)
 {
+	pthread_mutex_lock(ctx->mutex);
+	char prefix_str[sizeof(int)+1];
+	strncpy(prefix_str,(char*)&ctx->client_handler->prefix,sizeof(int));
+	prefix_str[sizeof(int)] = '\0';
+	hash_table_unset(ctx->client_handler->packet_log_table,prefix_str);
+	strncpy(prefix_str,(char*)&prefix,sizeof(int));
+	packet_log new_log = {.packets=ctx->packet_log,.mutex=ctx->mutex,.new_packet=ctx->client_handler->new_packet};
+	hash_table_set(ctx->client_handler->packet_log_table,prefix_str,&new_log,sizeof(packet_log));
 	ctx->client_handler->prefix = prefix;
+	pthread_mutex_unlock(ctx->mutex);
 }

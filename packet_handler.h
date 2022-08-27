@@ -1,3 +1,9 @@
+typedef struct packet_log {
+	vector* packets;
+	pthread_mutex_t* mutex;
+	pthread_cond_t* new_packet;
+} packet_log;
+
 typedef struct packet {
 	int fd;
 	char* bytes;
@@ -10,7 +16,7 @@ typedef struct packet_handler {
 	vector* packet_log;
 	int num_conns;
 	int epoll_fd;
-	int* prefix;
+	hash_table* packet_log_table;
 	pthread_cond_t* new_packet;
 } handler;
 

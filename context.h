@@ -17,7 +17,7 @@ typedef struct ctx_run
 } context_runtime;
 
 context_runtime* launch_context(context*);
-context* context_init(int);
+context* context_init(int,hash_table*);
 void context_read_stop(context*);
 void context_write_stop(context*);
 void context_read_spin(context*);

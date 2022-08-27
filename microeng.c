@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#include "hash_table.h"
 #include "vec.h"
 #include "packet_handler.h"
 #include "connection_handler.h"
@@ -57,7 +58,7 @@ main(int argc, char** argv)
 	int server = create_socket();
 	
 	vector* contexts = vector_init(sizeof(context_runtime)); 
-	
+	hash_table* packet_logs = hash_table_init(0);	
 	char out_buff[50];
 	
 	write(out,out_buff,snprintf(out_buff,sizeof(out_buff),"MicroENG\n"));
@@ -115,7 +116,7 @@ main(int argc, char** argv)
 
 		if ( strcmp(start, "strt_ctx") == 0 )
 		{
-			curr_ctx = context_init(server);
+			curr_ctx = context_init(server,packet_logs);
 			free(curr_line);
 			continue;
 		}
@@ -152,6 +153,7 @@ main(int argc, char** argv)
 			}
 
 			vector_push(contexts, curr_runtime);
+			write(out,out_buff,snprintf(out_buff,sizeof(out_buff),"done\n"));
 			free(curr_line);
 			continue;
 		}

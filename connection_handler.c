@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <netinet/in.h>
 
+#include "hash_table.h"
 #include "vec.h"
 #include "epoll_utils.h"
 #include "packet_handler.h"
@@ -18,10 +19,11 @@
 
 
 connection_handler*
-connection_handler_init(int server_fd, vector* packet_log, pthread_mutex_t* mutex)
+connection_handler_init(int server_fd, vector* packet_log, pthread_mutex_t* mutex,hash_table* packet_log_table)
 {
 	connection_handler* output = malloc(sizeof(connection_handler));
 	output->server_fd = server_fd;
+	output->packet_log_table = packet_log_table;
 	output->packet_log = packet_log;
 	output->mutex = mutex;
 	output->new_packet = malloc(sizeof(pthread_cond_t));
@@ -44,12 +46,12 @@ assign(vector* handlers, int conn_fd)
  *	Spawns a new packet handler and pushes it into a packet handler vector
  */
 void
-spawn_handler(vector* handler_vector,vector* packet_log, pthread_mutex_t* mutex, int* prefix, pthread_cond_t* new_packet)
+spawn_handler(vector* handler_vector,vector* packet_log, pthread_mutex_t* mutex, hash_table* prefix, pthread_cond_t* new_packet)
 {
 	handler* handler = handler_init();
 	handler->packet_log = packet_log;
 	handler->mutex = mutex;
-	handler->prefix = prefix;
+	handler->packet_log_table = prefix;
 	handler->new_packet = new_packet;
 	pthread_create(&handler->thread, NULL, handle_packets, handler);
 	vector_push(handler_vector, handler);	
@@ -67,7 +69,7 @@ connection_loop(void* args)
 	vector* active_handlers = vector_init(sizeof(handler));
 	vector* available_handlers = vector_init(sizeof(handler));
 	
-	spawn_handler(active_handlers, this->packet_log, this->mutex,&this->prefix, this->new_packet);
+	spawn_handler(active_handlers, this->packet_log, this->mutex,this->packet_log_table, this->new_packet);
 	vector_push(available_handlers, vector_last(active_handlers));
 
 	for (;;)
@@ -89,7 +91,7 @@ connection_loop(void* args)
 
 		if ( available_handlers->length == 0 )
 		{
-			spawn_handler(active_handlers, this->packet_log, this->mutex, &this->prefix, this->new_packet);
+			spawn_handler(active_handlers, this->packet_log, this->mutex, this->packet_log_table, this->new_packet);
 			vector_push(available_handlers, vector_last(active_handlers));
 		}
 		

@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <pthread.h>
 
+#include "hash_table.h"
 #include "vec.h"
 #include "packet_handler.h"
 
@@ -43,16 +44,28 @@ handle_packets(void* args)
 			{
 				packet new_packet = {.fd = events[i].data.fd, .bytes = malloc(MAX_PACKET)};
 				new_packet.size = recv(events[i].data.fd,new_packet.bytes,MAX_PACKET,MSG_DONTWAIT);
-				if ( new_packet.size <= 0 || *this->prefix != *(int*)new_packet.bytes )
+				if ( new_packet.size <= sizeof(int) )
 				{
 					free(new_packet.bytes);
 					continue;
 				}
+				
+				char prefix[sizeof(int)+1];
+				strncpy(prefix,new_packet.bytes,sizeof(int));
+				prefix[sizeof(int)] = '\0';;
+				packet_log* log = hash_table_get(this->packet_log_table,prefix);
+
+				if (log == NULL)
+				{
+					free(new_packet.bytes);
+					continue;
+				}
+
 				new_packet.bytes = realloc(new_packet.bytes,new_packet.size);
-				pthread_mutex_lock(this->mutex);
-				vector_push(this->packet_log, &new_packet);
-				pthread_mutex_unlock(this->mutex);
-				pthread_cond_signal(this->new_packet);
+				pthread_mutex_lock(log->mutex);
+				vector_push(log->packets, &new_packet);
+				pthread_mutex_unlock(log->mutex);
+				pthread_cond_signal(log->new_packet);
 				continue;
 			}
 			

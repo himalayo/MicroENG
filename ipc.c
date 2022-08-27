@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
+#include "hash_table.h"
 #include "vec.h"
 #include "packet_handler.h"
 #include "connection_handler.h"
