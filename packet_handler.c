@@ -40,39 +40,41 @@ handle_packets(void* args)
 		int num_events = epoll_wait(this->epoll_fd,events,42,-1);
 		for (int i=0; i<num_events; i++)
 		{
-			if ( events[i].events & EPOLLIN )
+			packet new_packet = {.fd = events[i].data.fd, .bytes = malloc(MAX_PACKET)};
+			new_packet.size = recv(events[i].data.fd,new_packet.bytes,MAX_PACKET,MSG_DONTWAIT);
+			if ( new_packet.size == 0 )
 			{
-				packet new_packet = {.fd = events[i].data.fd, .bytes = malloc(MAX_PACKET)};
-				new_packet.size = recv(events[i].data.fd,new_packet.bytes,MAX_PACKET,MSG_DONTWAIT);
-				if ( new_packet.size <= sizeof(int) )
-				{
-					free(new_packet.bytes);
-					continue;
-				}
-				
-				char prefix[sizeof(int)+1];
-				strncpy(prefix,new_packet.bytes,sizeof(int));
-				prefix[sizeof(int)] = '\0';;
-				packet_log* log = hash_table_get(this->packet_log_table,prefix);
 
-				if (log == NULL)
-				{
-					free(new_packet.bytes);
-					continue;
-				}
-
-				new_packet.bytes = realloc(new_packet.bytes,new_packet.size);
-				pthread_mutex_lock(log->mutex);
-				vector_push(log->packets, &new_packet);
-				pthread_mutex_unlock(log->mutex);
-				pthread_cond_signal(log->new_packet);
+				free(new_packet.bytes);
+				close(events[i].data.fd);
+				epoll_ctl(this->epoll_fd,EPOLL_CTL_DEL,events[i].data.fd,NULL);
+				this->num_conns--;
 				continue;
 			}
-			
-			// This can only be either EPOLLHUP or EPOLLRDHUP.
-			close(events[i].data.fd);
-			epoll_ctl(this->epoll_fd,EPOLL_CTL_DEL,events[i].data.fd,NULL);
-			this->num_conns--;
+
+			if ( new_packet.size <= sizeof(int) )
+			{
+				free(new_packet.bytes);
+				continue;
+			}
+
+			char prefix[sizeof(int)+1];
+			strncpy(prefix,new_packet.bytes,sizeof(int));
+			prefix[sizeof(int)] = '\0';;
+			packet_log* log = hash_table_get(this->packet_log_table,prefix);
+
+			if (log == NULL)
+			{
+				free(new_packet.bytes);
+				continue;
+			}
+
+			new_packet.bytes = realloc(new_packet.bytes,new_packet.size);
+			pthread_mutex_lock(log->mutex);
+			vector_push(log->packets, &new_packet);
+			pthread_mutex_unlock(log->mutex);
+			pthread_cond_signal(log->new_packet);
+			continue;
 		}
 	}
 	return NULL;

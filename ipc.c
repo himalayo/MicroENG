@@ -114,6 +114,7 @@ ipc_write(void* args)
 					header->opcode = HEADER_DONE;	
 					break;
 				default:
+					sleep(0);
 					break;
 			}
 		}
