@@ -23,6 +23,7 @@ typedef struct ipc_header {
 #define HEADER_POP 1
 #define HEADER_DONE 1<<2
 
+
 ipc_routine
 ipc_routine_init(void* buffer)
 {
@@ -42,7 +43,7 @@ void*
 ipc_read(void* args)
 {
 	context* ctx = (context*)args;
-
+	char debug_msg[70];
 	for (;;)
 	{
 		pthread_mutex_lock(&ctx->ipc.read.mutex);
@@ -68,7 +69,7 @@ ipc_read(void* args)
 					pthread_mutex_lock(ctx->mutex);
 					packet* last_packet = vector_pop(ctx->packet_log);
 					pthread_mutex_unlock(ctx->mutex);
-					
+					write(STDOUT_FILENO,debug_msg,snprintf(debug_msg,sizeof(debug_msg),"transfering %d\n",last_packet->fd));	
 					memcpy((char*)(ctx->ipc.read.buffer+sizeof(ipc_header)), last_packet->bytes, last_packet->size);
 					header->args = last_packet->fd;
 					header->len = last_packet->size;
@@ -88,7 +89,7 @@ void*
 ipc_write(void* args)
 {
 	context* ctx = (context*)args;
-
+	char debug_msg[70];
 	for (;;)
 	{
 		pthread_mutex_lock(&ctx->ipc.write.mutex);
@@ -104,6 +105,7 @@ ipc_write(void* args)
 			switch(header->opcode)
 			{
 				case HEADER_SEND:
+					write(STDOUT_FILENO,debug_msg,snprintf(debug_msg,sizeof(debug_msg),"sending %d\n",header->args));
 					send(
 						header->args,
 						ctx->ipc.write.buffer+sizeof(ipc_header),

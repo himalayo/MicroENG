@@ -34,6 +34,7 @@ void*
 handle_packets(void* args)
 {
 	handler* this = (handler*)args;
+	char debug_msg[70];
 	for(;;)
 	{	
 		struct epoll_event events[42];
@@ -44,7 +45,7 @@ handle_packets(void* args)
 			new_packet.size = recv(events[i].data.fd,new_packet.bytes,MAX_PACKET,MSG_DONTWAIT);
 			if ( new_packet.size == 0 )
 			{
-
+				write(STDOUT_FILENO,debug_msg,snprintf(debug_msg,sizeof(debug_msg),"closing %d\n",events[i].data.fd));
 				free(new_packet.bytes);
 				close(events[i].data.fd);
 				epoll_ctl(this->epoll_fd,EPOLL_CTL_DEL,events[i].data.fd,NULL);
@@ -54,6 +55,7 @@ handle_packets(void* args)
 
 			if ( new_packet.size <= sizeof(int) )
 			{
+				write(STDOUT_FILENO,debug_msg,snprintf(debug_msg,sizeof(debug_msg),"freeing %d\n",events[i].data.fd));
 				free(new_packet.bytes);
 				continue;
 			}
@@ -68,6 +70,8 @@ handle_packets(void* args)
 				free(new_packet.bytes);
 				continue;
 			}
+			
+			write(STDOUT_FILENO,debug_msg,snprintf(debug_msg,sizeof(debug_msg),"new packet %d\n",events[i].data.fd));
 
 			new_packet.bytes = realloc(new_packet.bytes,new_packet.size);
 			pthread_mutex_lock(log->mutex);

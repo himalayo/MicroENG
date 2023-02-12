@@ -1,4 +1,3 @@
-
 typedef struct vec {
 	void* data;
 	size_t value_size;

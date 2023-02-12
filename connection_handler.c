@@ -64,8 +64,8 @@ void*
 connection_loop(void* args)
 {
 	connection_handler* this = (connection_handler*)args;
-
-	int epoll = create_epoll(this->server_fd, -1);
+	char debug_msg[70];
+	int epoll = create_epoll(this->server_fd, EPOLLIN);
 	vector* active_handlers = vector_init(sizeof(handler));
 	vector* available_handlers = vector_init(sizeof(handler));
 	
@@ -101,15 +101,15 @@ connection_loop(void* args)
 			break;
 		}
 		
-		if ( new_connections > 0 )
+		for ( int i=0; i<new_connections; i++ )
 		{
 			struct sockaddr_in new_connection_address;
-			int new_connection_len = sizeof(new_connection_address);
+			unsigned int new_connection_len = sizeof(new_connection_address);
 			int new_connection_fd = accept(this->server_fd, (struct sockaddr*)&new_connection_address, &new_connection_len);	
 			fcntl(new_connection_fd, F_SETFL, fcntl(new_connection_fd, F_GETFL, 0) | O_NONBLOCK);
+			write(STDOUT_FILENO,debug_msg,snprintf(debug_msg,sizeof(debug_msg),"new conn %d\n",new_connection_fd));
 			assign(available_handlers, new_connection_fd);
 		}
-
 	
 	}
 }
